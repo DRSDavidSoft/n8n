@@ -82,7 +82,7 @@ describe('sql-utils', () => {
 			expect(result[0].updatedAt).toEqual(new Date(dateString));
 		});
 
-		it('should normalize date values from strings of sqlite format', () => {
+		it('should normalize date values from SQLite space-separated format (UTC, no timezone marker)', () => {
 			const columns = [createColumn('birthday', 'date')];
 			const dateString = '2024-01-15 10:30:00';
 			const rows = [{ id: 1, birthday: dateString, createdAt: dateString, updatedAt: dateString }];
@@ -92,6 +92,62 @@ describe('sql-utils', () => {
 			expect(result[0].birthday).toEqual(new Date('2024-01-15T10:30:00Z'));
 			expect(result[0].createdAt).toEqual(new Date('2024-01-15T10:30:00Z'));
 			expect(result[0].updatedAt).toEqual(new Date('2024-01-15T10:30:00Z'));
+		});
+
+		it('should normalize date values from SQLite format with milliseconds', () => {
+			const columns = [createColumn('birthday', 'date')];
+			const dateString = '2024-01-15 10:30:00.123';
+			const rows = [{ id: 1, birthday: dateString, createdAt: dateString, updatedAt: dateString }];
+
+			const result = normalizeRows(rows, columns);
+
+			expect(result[0].birthday).toEqual(new Date('2024-01-15T10:30:00.123Z'));
+			expect(result[0].createdAt).toEqual(new Date('2024-01-15T10:30:00.123Z'));
+			expect(result[0].updatedAt).toEqual(new Date('2024-01-15T10:30:00.123Z'));
+		});
+
+		it('should normalize PostgreSQL timestamptz strings with non-UTC timezone offset', () => {
+			// PostgreSQL returns timestamptz as strings with timezone offset when the
+			// pg driver does not convert them to Date objects (e.g. certain TypeORM configs).
+			// The string must be treated as-is (not have 'Z' appended), otherwise parsing fails.
+			const columns = [createColumn('birthday', 'date')];
+			// 2024-01-15 15:30:00+05:30 == 2024-01-15T10:00:00Z
+			const dateString = '2024-01-15T15:30:00.000+05:30';
+			const expectedUTC = new Date('2024-01-15T10:00:00.000Z');
+			const rows = [{ id: 1, birthday: dateString, createdAt: dateString, updatedAt: dateString }];
+
+			const result = normalizeRows(rows, columns);
+
+			expect(result[0].birthday).toEqual(expectedUTC);
+			expect(result[0].createdAt).toEqual(expectedUTC);
+			expect(result[0].updatedAt).toEqual(expectedUTC);
+		});
+
+		it('should normalize PostgreSQL space-separated timestamptz strings with timezone offset', () => {
+			const columns = [createColumn('birthday', 'date')];
+			// PostgreSQL wire format: space between date and time
+			const dateString = '2024-01-15 15:30:00.000+05:30';
+			const expectedUTC = new Date('2024-01-15T10:00:00.000Z');
+			const rows = [{ id: 1, birthday: dateString, createdAt: dateString, updatedAt: dateString }];
+
+			const result = normalizeRows(rows, columns);
+
+			expect(result[0].birthday).toEqual(expectedUTC);
+			expect(result[0].createdAt).toEqual(expectedUTC);
+			expect(result[0].updatedAt).toEqual(expectedUTC);
+		});
+
+		it('should normalize PostgreSQL timestamptz strings with UTC offset (+00:00)', () => {
+			const columns = [createColumn('birthday', 'date')];
+			const dateString = '2024-01-15T10:30:00.000+00:00';
+			const expectedUTC = new Date('2024-01-15T10:30:00.000Z');
+			const rows = [{ id: 1, birthday: dateString, createdAt: dateString, updatedAt: dateString }];
+
+			const result = normalizeRows(rows, columns);
+
+			expect(result[0].birthday).toEqual(expectedUTC);
+			expect(result[0].createdAt).toEqual(expectedUTC);
+			expect(result[0].updatedAt).toEqual(expectedUTC);
 		});
 
 		it('should normalize date values from timestamps', () => {

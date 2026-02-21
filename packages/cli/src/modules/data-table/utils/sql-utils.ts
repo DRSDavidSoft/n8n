@@ -190,11 +190,24 @@ export function extractInsertedIds(raw: unknown, dbType: DataSourceOptions['type
 
 // Convert date objects or strings to dates in UTC
 function normalizeDate(value: DataTableColumnJsType): Date | null {
-	if (value instanceof Date) return value;
+	if (value instanceof Date) {
+		return isNaN(value.getTime()) ? null : value;
+	}
 
 	if (typeof value === 'string') {
-		// sqlite returns date strings without timezone information, but we store them as UTC
-		const parsed = new Date(value.endsWith('Z') ? value : value + 'Z');
+		// Detect whether the string already contains timezone information:
+		// - ends with 'Z' (UTC)
+		// - ends with a numeric offset like '+05:30', '-05:00', '+0530', '+00', '+05:30:45'
+		const hasTimezoneInfo = value.endsWith('Z') || /[+-]\d{2}(:?\d{2}(:?\d{2})?)?$/.test(value);
+
+		// Normalise the space separator used by SQLite and PostgreSQL wire format
+		// ("YYYY-MM-DD HH:MM:SS") to the 'T' required by ISO 8601 so that
+		// new Date() parses it consistently across all JS environments.
+		const isoLike = value.replace(/^(\d{4}-\d{2}-\d{2}) /, '$1T');
+
+		// Strings without timezone info are treated as UTC (SQLite stores UTC without tz marker)
+		const normalizedStr = hasTimezoneInfo ? isoLike : isoLike + 'Z';
+		const parsed = new Date(normalizedStr);
 		if (!isNaN(parsed.getTime())) return parsed;
 	}
 
